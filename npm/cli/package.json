@@ -1,0 +1,23 @@
+{
+  "name": "@oma/cli",
+  "version": "0.1.0",
+  "description": "Open Managed Agents CLI - self-hosted agent platform",
+  "bin": {
+    "oma": "bin/oma.js"
+  },
+  "optionalDependencies": {
+    "@oma/cli-darwin-arm64": "0.1.0",
+    "@oma/cli-darwin-x64": "0.1.0",
+    "@oma/cli-linux-x64": "0.1.0",
+    "@oma/cli-linux-arm64": "0.1.0"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/domuk-k/open-managed-agents"
+  },
+  "license": "MIT",
+  "keywords": ["ai", "agents", "llm", "managed-agents", "claude"]
+}
