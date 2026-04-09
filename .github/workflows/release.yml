@@ -39,3 +39,48 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           GOOS: ${{ matrix.goos }}
+
+  npm-publish:
+    needs: release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - pkg: cli-linux-x64
+            artifact: oma_*_linux_amd64.tar.gz
+          - pkg: cli-linux-arm64
+            artifact: oma_*_linux_arm64.tar.gz
+          - pkg: cli-darwin-arm64
+            artifact: oma_*_darwin_arm64.tar.gz
+          - pkg: cli-darwin-x64
+            artifact: oma_*_darwin_amd64.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Download release asset
+        run: |
+          gh release download ${{ github.ref_name }} --pattern "${{ matrix.artifact }}" --dir /tmp
+          tar xzf /tmp/${{ matrix.artifact }} -C npm/${{ matrix.pkg }}/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish platform package
+        run: cd npm/${{ matrix.pkg }} && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  npm-publish-cli:
+    needs: npm-publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Publish CLI wrapper
+        run: cd npm/cli && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
