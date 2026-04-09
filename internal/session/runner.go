@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/domuk-k/open-managed-agents/internal/agent"
@@ -44,6 +45,9 @@ type AgentRunner struct {
 	// collectedEvents stores events emitted during the session for evaluation.
 	collectedEvents []Event
 
+	// maxRetries is the maximum number of retry attempts when evaluation fails.
+	maxRetries int
+
 	// inCh receives user messages while the runner is active.
 	inCh chan llm.Message
 }
@@ -65,6 +69,7 @@ func NewAgentRunner(
 		model:       model,
 		system:      system,
 		permChecker: tools.NewPermissionChecker(nil), // default: allow all
+		maxRetries:  2,
 		inCh:        make(chan llm.Message, 16),
 	}
 }
@@ -90,6 +95,13 @@ func (r *AgentRunner) WithOutcomes(outcomes []agent.Outcome, evaluator *Evaluato
 	return r
 }
 
+// WithMaxRetries sets the maximum number of evaluation retry attempts.
+// When set to 0, evaluation runs once with no retries.
+func (r *AgentRunner) WithMaxRetries(n int) *AgentRunner {
+	r.maxRetries = n
+	return r
+}
+
 // WithAgentContext sets the agent ID and callable agents on the runner,
 // enabling the delegate_to_agent tool to enforce permissions.
 func (r *AgentRunner) WithAgentContext(agentID string, callableAgents []string) *AgentRunner {
@@ -110,10 +122,12 @@ func (r *AgentRunner) InCh() chan llm.Message {
 }
 
 // Run executes the agentic loop: call LLM, execute tools, repeat.
-// It returns when the LLM produces a response with no tool calls,
+// It returns when the LLM produces a response with no tool calls
+// and all outcomes pass (or retries are exhausted),
 // or when an error / context cancellation occurs.
 func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.Message) error {
 	toolDefs := r.tools.Definitions()
+	retryAttempt := 0
 
 	for {
 		// Check context before each LLM call.
@@ -157,20 +171,50 @@ func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.
 			}
 		}
 
-		// No tool calls → we are done.
+		// No tool calls -> agent is idle; evaluate outcomes if configured.
 		if len(resp.ToolCalls) == 0 {
-			// Final checkpoint: persist the complete conversation.
+			// Checkpoint: persist the complete conversation.
 			if r.checkpoint != nil {
 				finalMessages := append(messages, resp.ToAssistantMessage())
 				_ = r.checkpoint(ctx, sessionID, finalMessages)
 			}
+			messages = append(messages, resp.ToAssistantMessage())
 			r.emit(sessionID, "session.status_idle", nil)
 
 			// Run outcome evaluation if configured.
 			if len(r.outcomes) > 0 && r.evaluator != nil {
-				if evalErr := r.runEvaluation(ctx, sessionID); evalErr != nil {
+				feedback, evalErr := r.runEvaluationWithRetry(ctx, sessionID)
+				if evalErr != nil {
 					r.emit(sessionID, "session.warning", map[string]string{
 						"warning": "evaluation failed: " + evalErr.Error(),
+					})
+					return nil
+				}
+
+				// If there are failures and we have retries left, inject feedback and continue.
+				if feedback != "" && retryAttempt < r.maxRetries {
+					retryAttempt++
+					r.emit(sessionID, "session.retry_count", map[string]int{
+						"attempt": retryAttempt,
+						"max":     r.maxRetries,
+					})
+					r.emit(sessionID, "session.retry", map[string]string{
+						"content": feedback,
+					})
+
+					// Append feedback as a user message to the conversation.
+					feedbackContent, _ := json.Marshal(feedback)
+					messages = append(messages, llm.Message{
+						Role:    "user",
+						Content: feedbackContent,
+					})
+					continue // re-enter the main loop for another attempt
+				}
+
+				// All outcomes passed or retries exhausted.
+				if feedback != "" {
+					r.emit(sessionID, "session.evaluation_final", map[string]string{
+						"status": "retries_exhausted",
 					})
 				}
 			}
@@ -290,33 +334,22 @@ func (r *AgentRunner) emitError(sessionID string, err error) {
 	r.emit(sessionID, "session.error", map[string]string{"error": err.Error()})
 }
 
-// runEvaluation executes outcome evaluation and emits results as events.
-func (r *AgentRunner) runEvaluation(ctx context.Context, sessionID string) error {
+// runEvaluationWithRetry executes outcome evaluation and emits results as events.
+// It returns a non-empty feedback string when any outcome fails, or "" when all pass.
+func (r *AgentRunner) runEvaluationWithRetry(ctx context.Context, sessionID string) (string, error) {
 	results, err := r.evaluator.Evaluate(ctx, r.outcomes, r.collectedEvents)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	r.emit(sessionID, "session.evaluation", results)
 
-	// Check for failures and provide feedback.
+	// Check for failures and build feedback.
 	var failures []EvalResult
 	for _, res := range results {
 		if !res.Pass {
 			failures = append(failures, res)
 		}
-	}
-
-	if len(failures) > 0 {
-		// Build feedback message about failed outcomes.
-		var feedback string
-		for _, f := range failures {
-			feedback += fmt.Sprintf("- Outcome %q failed: %s\n", f.Outcome, f.Reason)
-		}
-
-		r.emit(sessionID, "session.evaluation_feedback", map[string]string{
-			"feedback": feedback,
-		})
 	}
 
 	r.emit(sessionID, "session.evaluation_complete", map[string]interface{}{
@@ -325,5 +358,23 @@ func (r *AgentRunner) runEvaluation(ctx context.Context, sessionID string) error
 		"failed": len(failures),
 	})
 
-	return nil
+	if len(failures) == 0 {
+		return "", nil
+	}
+
+	// Build feedback message listing only the failed outcomes.
+	var sb strings.Builder
+	sb.WriteString("The following outcomes were not met:\n")
+	for _, f := range failures {
+		sb.WriteString(fmt.Sprintf("- %s: %s\n", f.Outcome, f.Reason))
+	}
+	sb.WriteString("Please address these issues.")
+
+	feedback := sb.String()
+
+	r.emit(sessionID, "session.evaluation_feedback", map[string]string{
+		"feedback": feedback,
+	})
+
+	return feedback, nil
 }

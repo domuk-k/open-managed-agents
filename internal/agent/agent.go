@@ -69,7 +69,8 @@ type SkillConfig struct {
 type Outcome struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Criteria    string `json:"criteria"` // natural language success criteria
+	Criteria    string `json:"criteria"`              // natural language success criteria
+	MaxRetries  *int   `json:"max_retries,omitempty"` // per-outcome retry override
 }
 
 // CreateRequest is the payload for creating a new agent.
