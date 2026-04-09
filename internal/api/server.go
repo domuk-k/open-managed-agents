@@ -63,6 +63,7 @@ func (s *Server) registerRoutes() {
 	v1.POST("/sessions/:id/resume", s.resumeSession)
 	v1.GET("/sessions/:id/stream", s.streamSession)
 	v1.GET("/sessions/:id/events", s.getSessionEvents)
+	v1.GET("/sessions/:id/evaluation", s.getSessionEvaluation)
 }
 
 func (s *Server) Start(addr string) error {

@@ -35,6 +35,15 @@ type AgentRunner struct {
 	// checkpoint is called after each LLM+tool execution cycle to persist messages.
 	checkpoint CheckpointFunc
 
+	// outcomes holds the success criteria to evaluate after the session completes.
+	outcomes []agent.Outcome
+
+	// evaluator runs outcome evaluation after the main loop finishes.
+	evaluator *Evaluator
+
+	// collectedEvents stores events emitted during the session for evaluation.
+	collectedEvents []Event
+
 	// inCh receives user messages while the runner is active.
 	inCh chan llm.Message
 }
@@ -70,6 +79,14 @@ func (r *AgentRunner) WithCheckpoint(fn CheckpointFunc) *AgentRunner {
 // on all tool calls. If policy is nil, all tools are allowed.
 func (r *AgentRunner) WithPermissionPolicy(policy *agent.PermissionPolicy) *AgentRunner {
 	r.permChecker = tools.NewPermissionChecker(policy)
+	return r
+}
+
+// WithOutcomes configures the runner with outcome criteria and an evaluator
+// for post-session self-evaluation.
+func (r *AgentRunner) WithOutcomes(outcomes []agent.Outcome, evaluator *Evaluator) *AgentRunner {
+	r.outcomes = outcomes
+	r.evaluator = evaluator
 	return r
 }
 
@@ -148,6 +165,16 @@ func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.
 				_ = r.checkpoint(ctx, sessionID, finalMessages)
 			}
 			r.emit(sessionID, "session.status_idle", nil)
+
+			// Run outcome evaluation if configured.
+			if len(r.outcomes) > 0 && r.evaluator != nil {
+				if evalErr := r.runEvaluation(ctx, sessionID); evalErr != nil {
+					r.emit(sessionID, "session.warning", map[string]string{
+						"warning": "evaluation failed: " + evalErr.Error(),
+					})
+				}
+			}
+
 			return nil
 		}
 
@@ -244,19 +271,59 @@ func toolResultToMessage(tr llm.ToolResult) llm.Message {
 	}
 }
 
-// emit publishes a typed event on the bus.
+// emit publishes a typed event on the bus and collects it for evaluation.
 func (r *AgentRunner) emit(sessionID, eventType string, content interface{}) {
 	var raw json.RawMessage
 	if content != nil {
 		raw, _ = json.Marshal(content)
 	}
-	r.events.Emit(sessionID, Event{
+	evt := Event{
 		Type:    eventType,
 		Content: raw,
-	})
+	}
+	r.collectedEvents = append(r.collectedEvents, evt)
+	r.events.Emit(sessionID, evt)
 }
 
 // emitError publishes a session.error event.
 func (r *AgentRunner) emitError(sessionID string, err error) {
 	r.emit(sessionID, "session.error", map[string]string{"error": err.Error()})
+}
+
+// runEvaluation executes outcome evaluation and emits results as events.
+func (r *AgentRunner) runEvaluation(ctx context.Context, sessionID string) error {
+	results, err := r.evaluator.Evaluate(ctx, r.outcomes, r.collectedEvents)
+	if err != nil {
+		return err
+	}
+
+	r.emit(sessionID, "session.evaluation", results)
+
+	// Check for failures and provide feedback.
+	var failures []EvalResult
+	for _, res := range results {
+		if !res.Pass {
+			failures = append(failures, res)
+		}
+	}
+
+	if len(failures) > 0 {
+		// Build feedback message about failed outcomes.
+		var feedback string
+		for _, f := range failures {
+			feedback += fmt.Sprintf("- Outcome %q failed: %s\n", f.Outcome, f.Reason)
+		}
+
+		r.emit(sessionID, "session.evaluation_feedback", map[string]string{
+			"feedback": feedback,
+		})
+	}
+
+	r.emit(sessionID, "session.evaluation_complete", map[string]interface{}{
+		"total":  len(results),
+		"passed": len(results) - len(failures),
+		"failed": len(failures),
+	})
+
+	return nil
 }

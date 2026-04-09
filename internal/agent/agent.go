@@ -14,6 +14,7 @@ type Agent struct {
 	McpServers     []McpServerConfig `json:"mcp_servers,omitempty"`
 	Skills         []SkillConfig     `json:"skills,omitempty"`
 	CallableAgents []string          `json:"callable_agents,omitempty"`
+	Outcomes       []Outcome         `json:"outcomes,omitempty"`
 	Description    *string           `json:"description,omitempty"`
 	Metadata       map[string]string `json:"metadata,omitempty"`
 	Version        int               `json:"version"`
@@ -64,6 +65,13 @@ type SkillConfig struct {
 	Description string `json:"description,omitempty"`
 }
 
+// Outcome defines a success criterion for self-evaluation of agent sessions.
+type Outcome struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Criteria    string `json:"criteria"` // natural language success criteria
+}
+
 // CreateRequest is the payload for creating a new agent.
 type CreateRequest struct {
 	Name           string            `json:"name"`
@@ -73,20 +81,22 @@ type CreateRequest struct {
 	McpServers     []McpServerConfig `json:"mcp_servers,omitempty"`
 	Skills         []SkillConfig     `json:"skills,omitempty"`
 	CallableAgents []string          `json:"callable_agents,omitempty"`
+	Outcomes       []Outcome         `json:"outcomes,omitempty"`
 	Description    *string           `json:"description,omitempty"`
 	Metadata       map[string]string `json:"metadata,omitempty"`
 }
 
 // UpdateRequest is the payload for updating an agent. Version is required for optimistic locking.
 type UpdateRequest struct {
-	Version        int                `json:"version"`
-	Name           *string            `json:"name,omitempty"`
-	Model          *ModelConfig       `json:"model,omitempty"`
-	System         *string            `json:"system,omitempty"`
-	Tools          []ToolConfig       `json:"tools,omitempty"`
-	McpServers     []McpServerConfig  `json:"mcp_servers,omitempty"`
-	Skills         []SkillConfig      `json:"skills,omitempty"`
-	CallableAgents []string           `json:"callable_agents,omitempty"`
-	Description    *string            `json:"description,omitempty"`
-	Metadata       map[string]string  `json:"metadata,omitempty"`
+	Version        int               `json:"version"`
+	Name           *string           `json:"name,omitempty"`
+	Model          *ModelConfig      `json:"model,omitempty"`
+	System         *string           `json:"system,omitempty"`
+	Tools          []ToolConfig      `json:"tools,omitempty"`
+	McpServers     []McpServerConfig `json:"mcp_servers,omitempty"`
+	Skills         []SkillConfig     `json:"skills,omitempty"`
+	CallableAgents []string          `json:"callable_agents,omitempty"`
+	Outcomes       []Outcome         `json:"outcomes,omitempty"`
+	Description    *string           `json:"description,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
 }

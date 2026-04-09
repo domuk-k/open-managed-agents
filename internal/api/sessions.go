@@ -218,3 +218,40 @@ func (s *Server) getSessionEvents(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, events)
 }
+
+func (s *Server) getSessionEvaluation(c echo.Context) error {
+	sessionID := c.Param("id")
+	ctx := c.Request().Context()
+
+	// Validate session exists
+	if _, err := s.store.GetSession(ctx, sessionID); err != nil {
+		return c.JSON(http.StatusNotFound, apiError("not_found", "session not found"))
+	}
+
+	// Get all events for this session and filter for evaluation events.
+	events, err := s.store.GetSessionEvents(ctx, sessionID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, apiError("internal_error", err.Error()))
+	}
+
+	var evalEvents []*store.StoredEvent
+	for _, evt := range events {
+		if evt.Type == "session.evaluation" || evt.Type == "session.evaluation_complete" {
+			evalEvents = append(evalEvents, evt)
+		}
+	}
+
+	if len(evalEvents) == 0 {
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"session_id": sessionID,
+			"status":     "no_evaluation",
+			"results":    []interface{}{},
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"session_id": sessionID,
+		"status":     "evaluated",
+		"events":     evalEvents,
+	})
+}
