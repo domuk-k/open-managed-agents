@@ -26,6 +26,21 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - name: oma
+    repository:
+      owner: domuk-k
+      name: homebrew-oma
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/domuk-k/open-managed-agents"
+    description: "Open Managed Agents - self-hosted agent platform"
+    license: "MIT"
+    install: |
+      bin.install "oma"
+    test: |
+      system "#{bin}/oma", "--help"
+
 changelog:
   sort: asc
   filters:
