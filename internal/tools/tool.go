@@ -68,3 +68,12 @@ func NewFullToolset() *Registry {
 	r.Register(&WebSearchTool{})
 	return r
 }
+
+// NewFullToolsetWithDelegate creates a full toolset that also includes
+// the delegate_to_agent tool, enabling multi-agent delegation.
+// This should be used when the agent has callable_agents configured.
+func NewFullToolsetWithDelegate(delegate *DelegateTool) *Registry {
+	r := NewFullToolset()
+	r.Register(delegate)
+	return r
+}

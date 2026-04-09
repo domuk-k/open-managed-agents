@@ -20,6 +20,11 @@ type AgentRunner struct {
 	model   string
 	system  string
 
+	// agentID identifies the agent this runner is executing for.
+	// Used by the delegate tool to enforce callable_agents permissions.
+	agentID        string
+	callableAgents []string
+
 	// inCh receives user messages while the runner is active.
 	inCh chan llm.Message
 }
@@ -43,6 +48,20 @@ func NewAgentRunner(
 		inCh:    make(chan llm.Message, 16),
 	}
 }
+
+// WithAgentContext sets the agent ID and callable agents on the runner,
+// enabling the delegate_to_agent tool to enforce permissions.
+func (r *AgentRunner) WithAgentContext(agentID string, callableAgents []string) *AgentRunner {
+	r.agentID = agentID
+	r.callableAgents = callableAgents
+	return r
+}
+
+// AgentID returns the agent ID associated with this runner.
+func (r *AgentRunner) AgentID() string { return r.agentID }
+
+// CallableAgents returns the list of agent IDs this runner is allowed to delegate to.
+func (r *AgentRunner) CallableAgents() []string { return r.callableAgents }
 
 // InCh returns the channel used to inject user messages into a running session.
 func (r *AgentRunner) InCh() chan llm.Message {
