@@ -21,6 +21,7 @@ go build ./... # 컴파일 확인
 - `internal/llm/` — LLM Provider 인터페이스 + OpenAI 호환 구현
 - `internal/sandbox/` — Sandbox 인터페이스 (Docker/Local)
 - `internal/tools/` — 빌트인 도구 (bash, file_read/write/edit, glob, grep)
+- `internal/mcp/` — MCP (Model Context Protocol) 클라이언트 통합
 - `internal/store/` — Store 인터페이스 + SQLite (sqlc)
 - `internal/config/` — 환경변수 → Config
 - `cli/` — cobra CLI 커맨드
@@ -35,4 +36,4 @@ go build ./... # 컴파일 확인
 
 ## Design Spec
 
-Full spec: `~/docs/superpowers/specs/2026-04-09-open-managed-agents-go-design.md`
+Design spec is tracked in-repo via issues and docs.

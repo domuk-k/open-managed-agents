@@ -2,7 +2,7 @@
 
 **Self-hosted, provider-agnostic managed agents platform. Single binary.**
 
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/domuk-k/open-managed-agents/ci.yml?branch=main)](https://github.com/domuk-k/open-managed-agents/actions)
 
@@ -104,6 +104,21 @@ All endpoints are under the `/v1` prefix.
 | `POST` | `/v1/sessions/:id/events` | Post an event (user message) |
 | `GET` | `/v1/sessions/:id/stream` | Stream events via SSE |
 | `GET` | `/v1/sessions/:id/events` | Get all session events |
+| `POST` | `/v1/sessions/:id/pause` | Pause a running session |
+| `POST` | `/v1/sessions/:id/resume` | Resume a paused session |
+| `GET` | `/v1/sessions/:id/evaluation` | Get session evaluation/outcome |
+
+### Example: Create an Agent
+
+```bash
+curl -X POST http://localhost:8080/v1/agents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Coder",
+    "model": "openai/gpt-4o",
+    "system_prompt": "You are a helpful coding assistant."
+  }'
+```
 
 ## Configuration
 
@@ -132,6 +147,7 @@ internal/
   llm/            LLM provider interface + OpenAI-compatible client
   sandbox/        Sandbox interface (Docker / Local backends)
   tools/          Built-in tools (bash, file_read, file_write, file_edit, glob, grep)
+  mcp/            MCP (Model Context Protocol) client integration
   store/          Store interface + SQLite implementation (sqlc)
   config/         Environment variable loading
 ```
@@ -160,9 +176,11 @@ make clean
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.26+ (must match go.mod)
 - CGO enabled (required for SQLite)
 - Docker (optional, for container sandboxing)
+
+> **Note:** Windows is not supported. OMA targets Linux and macOS only.
 
 ## License
 

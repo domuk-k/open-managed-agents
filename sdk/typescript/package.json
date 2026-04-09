@@ -9,5 +9,15 @@
     "test": "node --test dist/test/"
   },
   "license": "MIT",
-  "keywords": ["ai", "agents", "llm", "managed-agents"]
+  "keywords": [
+    "ai",
+    "agents",
+    "llm",
+    "managed-agents"
+  ],
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/domuk-k/open-managed-agents"
+  }
 }

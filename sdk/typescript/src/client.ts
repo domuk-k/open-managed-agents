@@ -192,6 +192,27 @@ export class OmaClient {
     );
   }
 
+  async pauseSession(id: string): Promise<void> {
+    await this.request<unknown>(
+      "POST",
+      `/v1/sessions/${encodeURIComponent(id)}/pause`,
+    );
+  }
+
+  async resumeSession(id: string): Promise<void> {
+    await this.request<unknown>(
+      "POST",
+      `/v1/sessions/${encodeURIComponent(id)}/resume`,
+    );
+  }
+
+  async getSessionEvaluation(id: string): Promise<any> {
+    return this.request<any>(
+      "GET",
+      `/v1/sessions/${encodeURIComponent(id)}/evaluation`,
+    );
+  }
+
   // -----------------------------------------------------------------------
   // SSE streaming
   // -----------------------------------------------------------------------
