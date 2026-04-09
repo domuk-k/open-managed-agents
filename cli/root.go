@@ -19,4 +19,5 @@ func init() {
 	rootCmd.AddCommand(agentsCmd)
 	rootCmd.AddCommand(environmentsCmd)
 	rootCmd.AddCommand(sessionsCmd)
+	rootCmd.AddCommand(chatCmd)
 }
