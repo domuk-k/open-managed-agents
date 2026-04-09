@@ -3,7 +3,9 @@ module github.com/domuk-k/open-managed-agents
 go 1.26.2
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/labstack/echo/v4 v4.15.1
+	github.com/mattn/go-sqlite3 v1.14.42
 	github.com/spf13/cobra v1.10.2
 )
 
