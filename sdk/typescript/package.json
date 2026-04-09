@@ -1,0 +1,13 @@
+{
+  "name": "@oma/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Open Managed Agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/test/"
+  },
+  "license": "MIT",
+  "keywords": ["ai", "agents", "llm", "managed-agents"]
+}
