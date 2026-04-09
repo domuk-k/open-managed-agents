@@ -34,6 +34,7 @@ func NewServer(cfg *config.Config, s store.Store) *Server {
 	}
 
 	srv.registerRoutes()
+	srv.registerDashboard()
 	return srv
 }
 
