@@ -11,6 +11,12 @@ type Config struct {
 	SandboxType string
 	LLM         LLMConfig
 	APIKey      string
+	E2B         E2BConfig
+}
+
+type E2BConfig struct {
+	APIKey   string
+	Template string
 }
 
 type LLMConfig struct {
@@ -30,6 +36,10 @@ func Load() *Config {
 			APIKey:  getEnv("OMA_LLM_API_KEY", ""),
 		},
 		APIKey: getEnv("OMA_API_KEY", ""),
+		E2B: E2BConfig{
+			APIKey:   getEnv("OMA_E2B_API_KEY", ""),
+			Template: getEnv("OMA_E2B_TEMPLATE", "base"),
+		},
 	}
 }
 
