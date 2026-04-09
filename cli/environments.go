@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -18,7 +19,30 @@ var envsCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		envType, _ := cmd.Flags().GetString("type")
-		fmt.Printf("Creating environment: name=%s type=%s\n", name, envType)
+		networking, _ := cmd.Flags().GetString("networking")
+
+		body := map[string]interface{}{
+			"name": name,
+			"config": map[string]interface{}{
+				"type": envType,
+				"networking": map[string]string{
+					"type": networking,
+				},
+			},
+		}
+
+		data, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+
+		c := newClient()
+		resp, err := c.post("/v1/environments", data)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(string(resp))
 		return nil
 	},
 }
@@ -27,7 +51,35 @@ var envsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List environments",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Listing environments...")
+		c := newClient()
+		resp, err := c.get("/v1/environments")
+		if err != nil {
+			return err
+		}
+
+		var envs []struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Config struct {
+				Type       string `json:"type"`
+				Networking struct {
+					Type string `json:"type"`
+				} `json:"networking"`
+			} `json:"config"`
+		}
+		if err := json.Unmarshal(resp, &envs); err != nil {
+			return fmt.Errorf("parse response: %w", err)
+		}
+
+		if len(envs) == 0 {
+			fmt.Println("No environments found.")
+			return nil
+		}
+
+		fmt.Printf("%-36s\t%-20s\t%-10s\t%s\n", "ID", "NAME", "TYPE", "NETWORKING")
+		for _, e := range envs {
+			fmt.Printf("%-36s\t%-20s\t%-10s\t%s\n", e.ID, e.Name, e.Config.Type, e.Config.Networking.Type)
+		}
 		return nil
 	},
 }
