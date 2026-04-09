@@ -1,0 +1,8 @@
+bin/
+data/
+dist/
+*.db
+*.exe
+.env
+.DS_Store
+vendor/

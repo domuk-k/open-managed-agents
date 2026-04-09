@@ -1,0 +1,19 @@
+services:
+  oma:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      - oma-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - OMA_DB_PATH=/data/oma.db
+      - OMA_SANDBOX_TYPE=docker
+      - OMA_LLM_BASE_URL=${OMA_LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      - OMA_LLM_MODEL=${OMA_LLM_MODEL:-qwen3.5-35b-a3b}
+      - OMA_LLM_API_KEY=${OMA_LLM_API_KEY:-}
+      - OMA_API_KEY=${OMA_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  oma-data:
