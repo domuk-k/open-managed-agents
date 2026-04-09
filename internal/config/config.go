@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type Config struct {
 	Port        string
@@ -28,6 +31,12 @@ func Load() *Config {
 		},
 		APIKey: getEnv("OMA_API_KEY", ""),
 	}
+}
+
+// IsAnthropic returns true if the configured model should use the Anthropic native API.
+// Models starting with "anthropic/" or "claude-" are detected as Anthropic models.
+func (c *LLMConfig) IsAnthropic() bool {
+	return strings.HasPrefix(c.Model, "anthropic/") || strings.HasPrefix(c.Model, "claude-")
 }
 
 func getEnv(key, fallback string) string {
