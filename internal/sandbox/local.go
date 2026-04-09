@@ -152,7 +152,7 @@ func (s *LocalSandbox) Grep(ctx context.Context, pattern string, path string) ([
 
 	_ = cmd.Run() // grep returns exit 1 on no match; ignore error
 
-	var matches []GrepMatch
+	matches := make([]GrepMatch, 0)
 	scanner := bufio.NewScanner(&stdout)
 	for scanner.Scan() {
 		line := scanner.Text()

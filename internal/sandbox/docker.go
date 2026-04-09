@@ -262,7 +262,7 @@ func (s *DockerSandbox) Grep(ctx context.Context, pattern string, path string) (
 		return nil, fmt.Errorf("grep failed (exit %d): %s", result.ExitCode, result.Stderr)
 	}
 
-	var matches []GrepMatch
+	matches := make([]GrepMatch, 0)
 	for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
 		if line == "" {
 			continue

@@ -2,7 +2,7 @@
 
 **Self-hosted, provider-agnostic managed agents platform. Single binary.**
 
-[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/domuk-k/open-managed-agents/ci.yml?branch=main)](https://github.com/domuk-k/open-managed-agents/actions)
 

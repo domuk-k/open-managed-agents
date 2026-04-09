@@ -15,7 +15,8 @@ Install the OMA CLI binary.
 
 Options:
   --version VERSION   Install a specific version (default: latest)
-  --verify            Verify download checksum (requires sha256sum or shasum)
+  --no-verify         Skip checksum verification
+  --verify            (no-op, verification is on by default)
   --help              Show this help message
 
 Environment variables:
@@ -28,13 +29,14 @@ EOF
 # Parse flags
 # ---------------------------------------------------------------------------
 
-VERIFY=false
+VERIFY=true
 VERSION="${OMA_VERSION:-latest}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --help|-h) usage ;;
-    --verify)  VERIFY=true; shift ;;
+    --no-verify) VERIFY=false; shift ;;
+    --verify)  shift ;; # no-op, verification is on by default
     --version) VERSION="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; usage ;;
   esac

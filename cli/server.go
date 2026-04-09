@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/domuk-k/open-managed-agents/internal/api"
 	"github.com/domuk-k/open-managed-agents/internal/config"
@@ -50,13 +54,26 @@ var serverStartCmd = &cobra.Command{
 		// Create API server
 		srv := api.NewServer(cfg, s)
 
+		// Write PID file
+		pidDir := filepath.Join(os.Getenv("HOME"), ".oma")
+		if err := os.MkdirAll(pidDir, 0o755); err != nil {
+			return fmt.Errorf("create pid directory: %w", err)
+		}
+		pidFile := filepath.Join(pidDir, "oma.pid")
+		if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644); err != nil {
+			return fmt.Errorf("write pid file: %w", err)
+		}
+		defer os.Remove(pidFile)
+
 		// Handle graceful shutdown
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		go func() {
 			<-sigCh
 			fmt.Println("\nShutting down server...")
-			if err := srv.Shutdown(); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := srv.Shutdown(ctx); err != nil {
 				fmt.Fprintf(os.Stderr, "shutdown error: %v\n", err)
 			}
 		}()
@@ -79,7 +96,22 @@ var serverStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the OMA server",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Stopping OMA server...")
+		pidFile := filepath.Join(os.Getenv("HOME"), ".oma", "oma.pid")
+		data, err := os.ReadFile(pidFile)
+		if err != nil {
+			return fmt.Errorf("read pid file: %w (is the server running?)", err)
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil {
+			return fmt.Errorf("parse pid: %w", err)
+		}
+		fmt.Printf("Stopping OMA server (PID %d)...\n", pid)
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			return fmt.Errorf("send SIGTERM to PID %d: %w", pid, err)
+		}
+		// Clean up PID file
+		os.Remove(pidFile)
+		fmt.Println("Server stop signal sent.")
 		return nil
 	},
 }

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+
 	"github.com/domuk-k/open-managed-agents/internal/config"
 	"github.com/domuk-k/open-managed-agents/internal/session"
 	"github.com/domuk-k/open-managed-agents/internal/store"
@@ -72,6 +74,6 @@ func (s *Server) Start(addr string) error {
 	return s.echo.Start(addr)
 }
 
-func (s *Server) Shutdown() error {
-	return s.echo.Close()
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.echo.Shutdown(ctx)
 }
