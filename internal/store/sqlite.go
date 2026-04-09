@@ -165,7 +165,7 @@ func (s *SQLiteStore) ListAgents(ctx context.Context) ([]*agent.Agent, error) {
 	}
 	defer rows.Close()
 
-	var agents []*agent.Agent
+	agents := make([]*agent.Agent, 0)
 	for rows.Next() {
 		var a agent.Agent
 		var configStr string
@@ -252,7 +252,7 @@ func (s *SQLiteStore) GetAgentVersions(ctx context.Context, agentID string) ([]A
 	}
 	defer rows.Close()
 
-	var versions []AgentVersion
+	versions := make([]AgentVersion, 0)
 	for rows.Next() {
 		var v AgentVersion
 		if err := rows.Scan(&v.AgentID, &v.Version, &v.Config, &v.CreatedAt); err != nil {
@@ -318,7 +318,7 @@ func (s *SQLiteStore) ListEnvironments(ctx context.Context) ([]*environment.Envi
 	}
 	defer rows.Close()
 
-	var envs []*environment.Environment
+	envs := make([]*environment.Environment, 0)
 	for rows.Next() {
 		var e environment.Environment
 		var configStr string
@@ -434,7 +434,7 @@ func (s *SQLiteStore) ListSessions(ctx context.Context) ([]*session.Session, err
 	}
 	defer rows.Close()
 
-	var sessions []*session.Session
+	sessions := make([]*session.Session, 0)
 	for rows.Next() {
 		var sess session.Session
 		var title sql.NullString
@@ -525,7 +525,7 @@ func (s *SQLiteStore) GetSessionEvents(ctx context.Context, sessionID string) ([
 	}
 	defer rows.Close()
 
-	var events []*StoredEvent
+	events := make([]*StoredEvent, 0)
 	for rows.Next() {
 		var e StoredEvent
 		if err := rows.Scan(&e.ID, &e.SessionID, &e.Type, &e.Data, &e.CreatedAt); err != nil {

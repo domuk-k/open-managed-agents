@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // AnthropicProvider implements the Provider interface using the native Anthropic Messages API.
@@ -26,7 +27,7 @@ func NewAnthropicProvider(baseURL, apiKey string) *AnthropicProvider {
 	return &AnthropicProvider{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		client:  &http.Client{},
+		client:  &http.Client{Timeout: 5 * time.Minute},
 		model:   "claude-sonnet-4-20250514",
 	}
 }

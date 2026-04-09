@@ -42,6 +42,9 @@ type AgentRunner struct {
 	// evaluator runs outcome evaluation after the main loop finishes.
 	evaluator *Evaluator
 
+	// eventsMu protects collectedEvents from concurrent access.
+	eventsMu sync.Mutex
+
 	// collectedEvents stores events emitted during the session for evaluation.
 	collectedEvents []Event
 
@@ -325,7 +328,9 @@ func (r *AgentRunner) emit(sessionID, eventType string, content interface{}) {
 		Type:    eventType,
 		Content: raw,
 	}
+	r.eventsMu.Lock()
 	r.collectedEvents = append(r.collectedEvents, evt)
+	r.eventsMu.Unlock()
 	r.events.Emit(sessionID, evt)
 }
 

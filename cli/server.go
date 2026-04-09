@@ -45,6 +45,7 @@ var serverStartCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open store: %w", err)
 		}
+		defer s.Close()
 
 		// Create API server
 		srv := api.NewServer(cfg, s)

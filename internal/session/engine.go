@@ -73,7 +73,7 @@ func (e *SessionEngine) StartSession(ctx context.Context, sessionID string, runn
 		return fmt.Errorf("session %s already running", sessionID)
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancel(context.Background())
 	e.sessions[sessionID] = &sessionEntry{runner: runner, cancel: cancel}
 	e.mu.Unlock()
 

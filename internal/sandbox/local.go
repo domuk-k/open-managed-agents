@@ -182,11 +182,15 @@ func (s *LocalSandbox) Destroy(ctx context.Context) error {
 	return os.RemoveAll(s.root)
 }
 
-// resolvePath returns an absolute path. If path is already absolute, return as-is;
-// otherwise join with sandbox root.
+// resolvePath returns an absolute path safely confined to the sandbox root.
+// It prevents path traversal via ../ or absolute paths escaping the sandbox.
 func (s *LocalSandbox) resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
+	// Always treat path as relative to sandbox root
+	cleaned := filepath.Clean("/" + path)
+	joined := filepath.Join(s.root, cleaned)
+	// Verify the result is still under sandbox root
+	if !strings.HasPrefix(joined, s.root+string(os.PathSeparator)) && joined != s.root {
+		return s.root
 	}
-	return filepath.Join(s.root, path)
+	return joined
 }

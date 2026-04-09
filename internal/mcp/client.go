@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/domuk-k/open-managed-agents/internal/agent"
 	"github.com/domuk-k/open-managed-agents/internal/llm"
@@ -32,7 +33,7 @@ func NewClient(config agent.McpServerConfig) (*Client, error) {
 	c := &Client{
 		name:    config.Name,
 		baseURL: config.URL,
-		http:    &http.Client{},
+		http:    &http.Client{Timeout: 30 * time.Second},
 	}
 
 	// Extract API key from auth config if present.

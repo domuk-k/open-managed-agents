@@ -9,6 +9,8 @@ RUN CGO_ENABLED=1 go build -o /oma ./cmd/oma
 FROM alpine:3.19
 RUN apk add --no-cache docker-cli ca-certificates
 COPY --from=builder /oma /usr/local/bin/oma
+RUN adduser -D -u 1000 oma
+USER oma
 EXPOSE 8080
 ENTRYPOINT ["oma"]
 CMD ["server", "start"]

@@ -10,12 +10,10 @@ builds:
     binary: oma
     env:
       - CGO_ENABLED=1
-    goos:
-      - linux
-      - darwin
-    goarch:
-      - amd64
-      - arm64
+    targets:
+      - linux_amd64
+      - darwin_arm64
+      - darwin_amd64
     ldflags:
       - -s -w -X main.version={{.Version}}
 

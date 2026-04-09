@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // OpenAIProvider implements the Provider interface using the OpenAI-compatible API.
@@ -23,7 +24,7 @@ func NewOpenAIProvider(baseURL, apiKey string) *OpenAIProvider {
 	return &OpenAIProvider{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		client:  &http.Client{},
+		client:  &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 

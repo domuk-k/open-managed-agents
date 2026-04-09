@@ -233,7 +233,7 @@ func (s *DockerSandbox) ReadFile(ctx context.Context, path string) ([]byte, erro
 
 // Glob returns file paths matching the given glob pattern inside the container.
 func (s *DockerSandbox) Glob(ctx context.Context, pattern string) ([]string, error) {
-	result, err := s.Exec(ctx, fmt.Sprintf("ls -1 %s 2>/dev/null", pattern), ExecOpts{})
+	result, err := s.Exec(ctx, fmt.Sprintf("find . -path '%s' 2>/dev/null", strings.ReplaceAll(pattern, "'", "'\\''")), ExecOpts{})
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ func (s *DockerSandbox) Glob(ctx context.Context, pattern string) ([]string, err
 
 // Grep searches for a pattern in files at the given path inside the container.
 func (s *DockerSandbox) Grep(ctx context.Context, pattern string, path string) ([]GrepMatch, error) {
-	result, err := s.Exec(ctx, fmt.Sprintf("grep -rn %q %q", pattern, path), ExecOpts{})
+	result, err := s.Exec(ctx, fmt.Sprintf("grep -rn -- '%s' '%s'", strings.ReplaceAll(pattern, "'", "'\\''"), strings.ReplaceAll(path, "'", "'\\''")), ExecOpts{})
 	if err != nil {
 		return nil, err
 	}

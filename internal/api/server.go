@@ -40,6 +40,7 @@ func NewServer(cfg *config.Config, s store.Store) *Server {
 
 func (s *Server) registerRoutes() {
 	v1 := s.echo.Group("/v1")
+	v1.Use(apiKeyAuth(s.config.APIKey))
 
 	// Agents
 	v1.POST("/agents", s.createAgent)
