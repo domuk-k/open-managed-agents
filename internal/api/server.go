@@ -12,6 +12,7 @@ type Server struct {
 	echo     *echo.Echo
 	store    store.Store
 	eventBus *session.EventBus
+	engine   *session.SessionEngine
 	config   *config.Config
 }
 
@@ -23,10 +24,12 @@ func NewServer(cfg *config.Config, s store.Store) *Server {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
+	bus := session.NewEventBus()
 	srv := &Server{
 		echo:     e,
 		store:    s,
-		eventBus: session.NewEventBus(),
+		eventBus: bus,
+		engine:   session.NewSessionEngine(bus),
 		config:   cfg,
 	}
 
@@ -56,6 +59,8 @@ func (s *Server) registerRoutes() {
 	v1.GET("/sessions", s.listSessions)
 	v1.GET("/sessions/:id", s.getSession)
 	v1.POST("/sessions/:id/events", s.postSessionEvent)
+	v1.POST("/sessions/:id/pause", s.pauseSession)
+	v1.POST("/sessions/:id/resume", s.resumeSession)
 	v1.GET("/sessions/:id/stream", s.streamSession)
 	v1.GET("/sessions/:id/events", s.getSessionEvents)
 }

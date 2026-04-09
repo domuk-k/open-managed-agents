@@ -134,3 +134,12 @@ func (e *SessionEngine) StopSession(sessionID string) error {
 	entry.cancel()
 	return nil
 }
+
+// ResumeSession loads persisted messages and relaunches the agent runner.
+func (e *SessionEngine) ResumeSession(ctx context.Context, sessionID string, runner *AgentRunner, loadMessages func(ctx context.Context, sessionID string) ([]llm.Message, error)) error {
+	messages, err := loadMessages(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("load messages for session %s: %w", sessionID, err)
+	}
+	return e.StartSession(ctx, sessionID, runner, messages)
+}

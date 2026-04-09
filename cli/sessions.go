@@ -116,6 +116,38 @@ var sessionsStreamCmd = &cobra.Command{
 	},
 }
 
+var sessionsPauseCmd = &cobra.Command{
+	Use:   "pause [id]",
+	Short: "Pause a running session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sessionID := args[0]
+		c := newClient()
+		resp, err := c.post("/v1/sessions/"+sessionID+"/pause", nil)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(resp))
+		return nil
+	},
+}
+
+var sessionsResumeCmd = &cobra.Command{
+	Use:   "resume [id]",
+	Short: "Resume a paused session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sessionID := args[0]
+		c := newClient()
+		resp, err := c.post("/v1/sessions/"+sessionID+"/resume", nil)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(resp))
+		return nil
+	},
+}
+
 func init() {
 	sessionsCreateCmd.Flags().String("agent", "", "Agent ID")
 	sessionsCreateCmd.Flags().String("env", "", "Environment ID")
@@ -123,4 +155,6 @@ func init() {
 	sessionsCmd.AddCommand(sessionsCreateCmd)
 	sessionsCmd.AddCommand(sessionsListCmd)
 	sessionsCmd.AddCommand(sessionsStreamCmd)
+	sessionsCmd.AddCommand(sessionsPauseCmd)
+	sessionsCmd.AddCommand(sessionsResumeCmd)
 }

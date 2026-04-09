@@ -18,6 +18,9 @@ import (
 //go:embed migrations/001_init.up.sql
 var migrationSQL string
 
+//go:embed migrations/002_messages.up.sql
+var migration002SQL string
+
 // SQLiteStore implements the Store interface backed by SQLite.
 type SQLiteStore struct {
 	db *sql.DB
@@ -32,6 +35,10 @@ func NewSQLiteStore(dbPath string) (Store, error) {
 	if _, err := db.Exec(migrationSQL); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+	if _, err := db.Exec(migration002SQL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("run migration 002: %w", err)
 	}
 	return &SQLiteStore{db: db}, nil
 }
@@ -463,6 +470,32 @@ func (s *SQLiteStore) UpdateSessionStatus(ctx context.Context, id string, status
 		string(status), ts, id,
 	)
 	return err
+}
+
+// --- Messages ---
+
+func (s *SQLiteStore) SaveMessages(ctx context.Context, sessionID string, messages []byte) error {
+	ts := now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO session_messages (session_id, messages, updated_at) VALUES (?, ?, ?)
+		 ON CONFLICT(session_id) DO UPDATE SET messages = excluded.messages, updated_at = excluded.updated_at`,
+		sessionID, string(messages), ts,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetMessages(ctx context.Context, sessionID string) ([]byte, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT messages FROM session_messages WHERE session_id = ?`, sessionID)
+
+	var messagesStr string
+	if err := row.Scan(&messagesStr); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no messages found for session: %s", sessionID)
+		}
+		return nil, err
+	}
+	return []byte(messagesStr), nil
 }
 
 // --- Events ---

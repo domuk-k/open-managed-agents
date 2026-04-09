@@ -12,6 +12,9 @@ import (
 	"github.com/domuk-k/open-managed-agents/internal/tools"
 )
 
+// CheckpointFunc is called after each LLM+tool cycle with the current messages.
+type CheckpointFunc func(ctx context.Context, sessionID string, messages []llm.Message) error
+
 // AgentRunner implements the core LLM + tool execution loop.
 type AgentRunner struct {
 	llm     llm.Provider
@@ -35,9 +38,6 @@ type AgentRunner struct {
 	// inCh receives user messages while the runner is active.
 	inCh chan llm.Message
 }
-
-// CheckpointFunc is called after each LLM+tool cycle with the current messages.
-type CheckpointFunc func(ctx context.Context, sessionID string, messages []llm.Message) error
 
 // NewAgentRunner creates an AgentRunner wired to the given provider, tool
 // registry, sandbox, event bus, model name and system prompt.
@@ -142,6 +142,11 @@ func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.
 
 		// No tool calls → we are done.
 		if len(resp.ToolCalls) == 0 {
+			// Final checkpoint: persist the complete conversation.
+			if r.checkpoint != nil {
+				finalMessages := append(messages, resp.ToAssistantMessage())
+				_ = r.checkpoint(ctx, sessionID, finalMessages)
+			}
 			r.emit(sessionID, "session.status_idle", nil)
 			return nil
 		}

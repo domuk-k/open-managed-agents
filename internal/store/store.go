@@ -30,6 +30,10 @@ type Store interface {
 	ListSessions(ctx context.Context) ([]*session.Session, error)
 	UpdateSessionStatus(ctx context.Context, id string, status session.SessionStatus) error
 
+	// Messages
+	SaveMessages(ctx context.Context, sessionID string, messages []byte) error
+	GetMessages(ctx context.Context, sessionID string) ([]byte, error)
+
 	// Events
 	InsertEvent(ctx context.Context, e *StoredEvent) error
 	GetSessionEvents(ctx context.Context, sessionID string) ([]*StoredEvent, error)

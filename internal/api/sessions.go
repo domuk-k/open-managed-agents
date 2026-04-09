@@ -115,6 +115,52 @@ func (s *Server) postSessionEvent(c echo.Context) error {
 	return c.JSON(http.StatusAccepted, storedEvt)
 }
 
+func (s *Server) pauseSession(c echo.Context) error {
+	sessionID := c.Param("id")
+	ctx := c.Request().Context()
+
+	sess, err := s.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, apiError("not_found", "session not found"))
+	}
+
+	if sess.Status != session.StatusRunning {
+		return c.JSON(http.StatusConflict, apiError("invalid_state", fmt.Sprintf("session is %s, not running", sess.Status)))
+	}
+
+	if err := s.engine.StopSession(sessionID); err != nil {
+		return c.JSON(http.StatusInternalServerError, apiError("internal_error", err.Error()))
+	}
+
+	if err := s.store.UpdateSessionStatus(ctx, sessionID, session.StatusPaused); err != nil {
+		return c.JSON(http.StatusInternalServerError, apiError("internal_error", err.Error()))
+	}
+
+	sess.Status = session.StatusPaused
+	return c.JSON(http.StatusOK, sess)
+}
+
+func (s *Server) resumeSession(c echo.Context) error {
+	sessionID := c.Param("id")
+	ctx := c.Request().Context()
+
+	sess, err := s.store.GetSession(ctx, sessionID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, apiError("not_found", "session not found"))
+	}
+
+	if sess.Status != session.StatusPaused {
+		return c.JSON(http.StatusConflict, apiError("invalid_state", fmt.Sprintf("session is %s, not paused", sess.Status)))
+	}
+
+	if err := s.store.UpdateSessionStatus(ctx, sessionID, session.StatusRunning); err != nil {
+		return c.JSON(http.StatusInternalServerError, apiError("internal_error", err.Error()))
+	}
+
+	sess.Status = session.StatusRunning
+	return c.JSON(http.StatusOK, sess)
+}
+
 func (s *Server) streamSession(c echo.Context) error {
 	sessionID := c.Param("id")
 	ctx := c.Request().Context()
