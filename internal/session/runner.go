@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/domuk-k/open-managed-agents/internal/agent"
 	"github.com/domuk-k/open-managed-agents/internal/llm"
 	"github.com/domuk-k/open-managed-agents/internal/sandbox"
 	"github.com/domuk-k/open-managed-agents/internal/tools"
@@ -20,14 +21,23 @@ type AgentRunner struct {
 	model   string
 	system  string
 
+	// permChecker enforces scoped permission policies on tool calls.
+	permChecker *tools.PermissionChecker
+
 	// agentID identifies the agent this runner is executing for.
 	// Used by the delegate tool to enforce callable_agents permissions.
 	agentID        string
 	callableAgents []string
 
+	// checkpoint is called after each LLM+tool execution cycle to persist messages.
+	checkpoint CheckpointFunc
+
 	// inCh receives user messages while the runner is active.
 	inCh chan llm.Message
 }
+
+// CheckpointFunc is called after each LLM+tool cycle with the current messages.
+type CheckpointFunc func(ctx context.Context, sessionID string, messages []llm.Message) error
 
 // NewAgentRunner creates an AgentRunner wired to the given provider, tool
 // registry, sandbox, event bus, model name and system prompt.
@@ -39,14 +49,28 @@ func NewAgentRunner(
 	model, system string,
 ) *AgentRunner {
 	return &AgentRunner{
-		llm:     provider,
-		tools:   registry,
-		sandbox: sb,
-		events:  bus,
-		model:   model,
-		system:  system,
-		inCh:    make(chan llm.Message, 16),
+		llm:         provider,
+		tools:       registry,
+		sandbox:     sb,
+		events:      bus,
+		model:       model,
+		system:      system,
+		permChecker: tools.NewPermissionChecker(nil), // default: allow all
+		inCh:        make(chan llm.Message, 16),
 	}
+}
+
+// WithCheckpoint sets the checkpoint callback for persisting messages after each cycle.
+func (r *AgentRunner) WithCheckpoint(fn CheckpointFunc) *AgentRunner {
+	r.checkpoint = fn
+	return r
+}
+
+// WithPermissionPolicy configures the runner to enforce the given permission policy
+// on all tool calls. If policy is nil, all tools are allowed.
+func (r *AgentRunner) WithPermissionPolicy(policy *agent.PermissionPolicy) *AgentRunner {
+	r.permChecker = tools.NewPermissionChecker(policy)
+	return r
 }
 
 // WithAgentContext sets the agent ID and callable agents on the runner,
@@ -147,6 +171,23 @@ func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.
 			go func(idx int, tc llm.ToolCall) {
 				defer wg.Done()
 
+				// Enforce permission policy before executing the tool.
+				if permErr := r.permChecker.Check(tc.Function.Name, tc.Function.Arguments); permErr != nil {
+					content, _ := json.Marshal(map[string]string{"error": permErr.Error()})
+					results[idx] = toolResultEntry{
+						idx: idx,
+						result: llm.ToolResult{
+							ID:      tc.ID,
+							Content: content,
+						},
+					}
+					r.emit(sessionID, "agent.tool_result", map[string]interface{}{
+						"tool_use_id": tc.ID,
+						"content":     json.RawMessage(content),
+					})
+					return
+				}
+
 				out, execErr := r.tools.Execute(ctx, tc.Function.Name, tc.Function.Arguments, r.sandbox)
 				var content json.RawMessage
 				if execErr != nil {
@@ -176,6 +217,15 @@ func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.
 		// Append tool result messages in order.
 		for _, entry := range results {
 			messages = append(messages, toolResultToMessage(entry.result))
+		}
+
+		// Checkpoint: persist messages after each LLM+tool cycle.
+		if r.checkpoint != nil {
+			if cpErr := r.checkpoint(ctx, sessionID, messages); cpErr != nil {
+				r.emit(sessionID, "session.warning", map[string]string{
+					"warning": "checkpoint failed: " + cpErr.Error(),
+				})
+			}
 		}
 	}
 }
