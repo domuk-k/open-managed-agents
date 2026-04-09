@@ -64,5 +64,7 @@ func NewFullToolset() *Registry {
 	r.Register(&FileEditTool{})
 	r.Register(&GlobTool{})
 	r.Register(&GrepTool{})
+	r.Register(&WebFetchTool{})
+	r.Register(&WebSearchTool{})
 	return r
 }
