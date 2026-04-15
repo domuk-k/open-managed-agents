@@ -51,6 +51,9 @@ type AgentRunner struct {
 	// maxRetries is the maximum number of retry attempts when evaluation fails.
 	maxRetries int
 
+	// interactive enables multi-turn conversation: after idle, wait for next user message.
+	interactive bool
+
 	// inCh receives user messages while the runner is active.
 	inCh chan llm.Message
 }
@@ -98,6 +101,13 @@ func (r *AgentRunner) WithOutcomes(outcomes []agent.Outcome, evaluator *Evaluato
 	return r
 }
 
+// WithInteractive enables multi-turn mode: after idle, the runner waits
+// for the next user message instead of returning.
+func (r *AgentRunner) WithInteractive() *AgentRunner {
+	r.interactive = true
+	return r
+}
+
 // WithMaxRetries sets the maximum number of evaluation retry attempts.
 // When set to 0, evaluation runs once with no retries.
 func (r *AgentRunner) WithMaxRetries(n int) *AgentRunner {
@@ -131,6 +141,19 @@ func (r *AgentRunner) InCh() chan llm.Message {
 func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.Message) error {
 	toolDefs := r.tools.Definitions()
 	retryAttempt := 0
+
+	// In interactive mode with no initial messages, wait for the first user message.
+	if len(messages) == 0 && r.interactive {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case msg, ok := <-r.inCh:
+			if !ok {
+				return nil
+			}
+			messages = append(messages, msg)
+		}
+	}
 
 	for {
 		// Check context before each LLM call.
@@ -222,6 +245,19 @@ func (r *AgentRunner) Run(ctx context.Context, sessionID string, messages []llm.
 				}
 			}
 
+			// In interactive mode, wait for next user message.
+			if r.interactive {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case msg, ok := <-r.inCh:
+					if !ok {
+						return nil
+					}
+					messages = append(messages, msg)
+					continue
+				}
+			}
 			return nil
 		}
 

@@ -1,12 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
+	"github.com/domuk-k/open-managed-agents/internal/agent"
+	"github.com/domuk-k/open-managed-agents/internal/llm"
+	"github.com/domuk-k/open-managed-agents/internal/sandbox"
 	"github.com/domuk-k/open-managed-agents/internal/session"
 	"github.com/domuk-k/open-managed-agents/internal/store"
+	"github.com/domuk-k/open-managed-agents/internal/tools"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
@@ -51,7 +56,51 @@ func (s *Server) createSession(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, apiError("internal_error", err.Error()))
 	}
 
+	// Start the AgentRunner for this session
+	if err := s.startRunner(sess, ag); err != nil {
+		// Session created but runner failed — still return the session
+		s.store.UpdateSessionStatus(ctx, sess.ID, session.StatusFailed)
+		return c.JSON(http.StatusCreated, sess)
+	}
+	s.store.UpdateSessionStatus(ctx, sess.ID, session.StatusRunning)
+	sess.Status = session.StatusRunning
+
 	return c.JSON(http.StatusCreated, sess)
+}
+
+func (s *Server) startRunner(sess *session.Session, ag *agent.Agent) error {
+	// Create LLM provider based on config
+	var provider llm.Provider
+	if s.config.LLM.IsAnthropic() {
+		provider = llm.NewAnthropicProvider(s.config.LLM.BaseURL, s.config.LLM.APIKey)
+	} else {
+		provider = llm.NewOpenAIProvider(s.config.LLM.BaseURL, s.config.LLM.APIKey)
+	}
+
+	// Create sandbox for this session
+	var sb sandbox.Sandbox
+	if s.sandboxProvider != nil {
+		env, err := s.store.GetEnvironment(context.Background(), sess.EnvironmentID)
+		if err == nil {
+			sb, _ = s.sandboxProvider.Create(context.Background(), env.Config)
+		}
+	}
+
+	// Build tool registry
+	registry := tools.NewFullToolset()
+
+	// Determine model and system prompt
+	model := ag.Model.ID
+	systemPrompt := ""
+	if ag.System != nil {
+		systemPrompt = *ag.System
+	}
+
+	// Create and start the runner in interactive mode (waits for user messages)
+	runner := session.NewAgentRunner(provider, registry, sb, s.eventBus, model, systemPrompt).
+		WithInteractive()
+
+	return s.engine.StartSession(context.Background(), sess.ID, runner, []llm.Message{})
 }
 
 func (s *Server) listSessions(c echo.Context) error {
@@ -111,6 +160,13 @@ func (s *Server) postSessionEvent(c echo.Context) error {
 		Content: data,
 	}
 	s.eventBus.Emit(sessionID, busEvent)
+
+	// Forward user message to the running AgentRunner
+	if evt.Type == "user.message" || evt.Type == "user_message" {
+		if err := s.engine.SendMessage(ctx, sessionID, evt.Content); err != nil {
+			fmt.Printf("[OMA] SendMessage error for session %s: %v\n", sessionID, err)
+		}
+	}
 
 	return c.JSON(http.StatusAccepted, storedEvt)
 }

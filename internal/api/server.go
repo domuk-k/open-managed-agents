@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/domuk-k/open-managed-agents/internal/config"
+	"github.com/domuk-k/open-managed-agents/internal/sandbox"
 	"github.com/domuk-k/open-managed-agents/internal/session"
 	"github.com/domuk-k/open-managed-agents/internal/store"
 	"github.com/labstack/echo/v4"
@@ -11,11 +12,12 @@ import (
 )
 
 type Server struct {
-	echo     *echo.Echo
-	store    store.Store
-	eventBus *session.EventBus
-	engine   *session.SessionEngine
-	config   *config.Config
+	echo            *echo.Echo
+	store           store.Store
+	eventBus        *session.EventBus
+	engine          *session.SessionEngine
+	config          *config.Config
+	sandboxProvider sandbox.Provider
 }
 
 func NewServer(cfg *config.Config, s store.Store) *Server {
@@ -27,12 +29,17 @@ func NewServer(cfg *config.Config, s store.Store) *Server {
 	e.Use(middleware.CORS())
 
 	bus := session.NewEventBus()
+
+	// Create sandbox provider based on config
+	sbProvider, _ := sandbox.NewProvider(cfg.SandboxType, cfg)
+
 	srv := &Server{
-		echo:     e,
-		store:    s,
-		eventBus: bus,
-		engine:   session.NewSessionEngine(bus),
-		config:   cfg,
+		echo:            e,
+		store:           s,
+		eventBus:        bus,
+		engine:          session.NewSessionEngine(bus),
+		config:          cfg,
+		sandboxProvider: sbProvider,
 	}
 
 	srv.registerRoutes()

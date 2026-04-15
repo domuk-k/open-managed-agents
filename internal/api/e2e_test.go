@@ -288,8 +288,8 @@ func TestE2E_SessionLifecycle(t *testing.T) {
 	if sess.ID == "" {
 		t.Fatal("expected non-empty session ID")
 	}
-	if sess.Status != session.StatusStarting {
-		t.Fatalf("expected status 'starting', got %q", sess.Status)
+	if sess.Status != session.StatusRunning && sess.Status != session.StatusStarting {
+		t.Fatalf("expected status 'running' or 'starting', got %q", sess.Status)
 	}
 	if sess.Agent != ag.ID {
 		t.Fatalf("expected agent_id %q, got %q", ag.ID, sess.Agent)
