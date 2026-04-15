@@ -9,36 +9,146 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             goos: linux
+            goarch: amd64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
           - os: macos-latest
             goos: darwin
+            goarch: arm64
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
           go-version: stable
 
       - name: Install gcc (Linux)
-        if: matrix.goos == 'linux'
+        if: startsWith(matrix.os, 'ubuntu')
         run: sudo apt-get update && sudo apt-get install -y gcc
 
-      - uses: goreleaser/goreleaser-action@v5
+      - name: Build
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          CGO_ENABLED=1 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "-s -w -X main.version=${VERSION}" \
+            -o oma ./cmd/oma
+
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          tar czf oma_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz oma
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          version: latest
-          args: release --clean --split
+          name: oma-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: oma_*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: cd dist && sha256sum oma_*.tar.gz > checksums.txt
+
+      - name: Create GitHub Release
+        run: |
+          gh release create ${{ github.ref_name }} dist/* \
+            --title "OMA ${{ github.ref_name }}" \
+            --generate-notes
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download checksums
+        run: gh release download ${{ github.ref_name }} --pattern "checksums.txt" --dir /tmp
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          GOOS: ${{ matrix.goos }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          BASE_URL="https://github.com/domuk-k/open-managed-agents/releases/download/${{ github.ref_name }}"
+          SHA_DARWIN_ARM64=$(grep "darwin_arm64" /tmp/checksums.txt | awk '{print $1}')
+          SHA_DARWIN_AMD64=$(grep "darwin_amd64" /tmp/checksums.txt | awk '{print $1}')
+          SHA_LINUX_AMD64=$(grep "linux_amd64" /tmp/checksums.txt | awk '{print $1}')
+          SHA_LINUX_ARM64=$(grep "linux_arm64" /tmp/checksums.txt | awk '{print $1}')
+
+          mkdir -p /tmp/tap/Formula
+          cat > /tmp/tap/Formula/oma.rb << FORMULA
+          class Oma < Formula
+            desc "Open Managed Agents - self-hosted agent platform"
+            homepage "https://github.com/domuk-k/open-managed-agents"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "${BASE_URL}/oma_${VERSION}_darwin_arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "${BASE_URL}/oma_${VERSION}_darwin_amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "${BASE_URL}/oma_${VERSION}_linux_arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "${BASE_URL}/oma_${VERSION}_linux_amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              bin.install "oma"
+            end
+
+            test do
+              assert_match "OMA", shell_output("#{bin}/oma version")
+            end
+          end
+          FORMULA
+
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/domuk-k/homebrew-oma.git /tmp/homebrew-repo
+          cp /tmp/tap/Formula/oma.rb /tmp/homebrew-repo/Formula/oma.rb 2>/dev/null || mkdir -p /tmp/homebrew-repo/Formula && cp /tmp/tap/Formula/oma.rb /tmp/homebrew-repo/Formula/oma.rb
+          cd /tmp/homebrew-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update oma to ${VERSION}" || true
+          git push
 
   npm-publish:
     needs: release
@@ -47,27 +157,35 @@ jobs:
       matrix:
         include:
           - pkg: cli-linux-x64
-            artifact: oma_*_linux_amd64.tar.gz
+            artifact: "linux_amd64"
           - pkg: cli-linux-arm64
-            artifact: oma_*_linux_arm64.tar.gz
+            artifact: "linux_arm64"
           - pkg: cli-darwin-arm64
-            artifact: oma_*_darwin_arm64.tar.gz
+            artifact: "darwin_arm64"
           - pkg: cli-darwin-x64
-            artifact: oma_*_darwin_amd64.tar.gz
+            artifact: "darwin_amd64"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
-      - name: Download release asset
+
+      - name: Download and extract binary
         run: |
-          gh release download ${{ github.ref_name }} --pattern "${{ matrix.artifact }}" --dir /tmp
-          tar xzf /tmp/${{ matrix.artifact }} -C npm/${{ matrix.pkg }}/
+          VERSION=${GITHUB_REF_NAME#v}
+          gh release download ${{ github.ref_name }} \
+            --pattern "oma_${VERSION}_${{ matrix.artifact }}.tar.gz" --dir /tmp
+          tar xzf /tmp/oma_${VERSION}_${{ matrix.artifact }}.tar.gz -C npm/${{ matrix.pkg }}/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish platform package
-        run: cd npm/${{ matrix.pkg }} && npm publish --access public
+
+      - name: Update version and publish
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cd npm/${{ matrix.pkg }}
+          npm version ${VERSION} --no-git-tag-version --allow-same-version
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -80,7 +198,19 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
-      - name: Publish CLI wrapper
-        run: cd npm/cli && npm publish --access public
+
+      - name: Update version and publish
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cd npm/cli
+          npm version ${VERSION} --no-git-tag-version --allow-same-version
+          node -e "
+            const pkg = require('./package.json');
+            for (const dep of Object.keys(pkg.optionalDependencies || {})) {
+              pkg.optionalDependencies[dep] = '${VERSION}';
+            }
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
