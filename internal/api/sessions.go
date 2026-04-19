@@ -8,6 +8,7 @@ import (
 
 	"github.com/domuk-k/open-managed-agents/internal/agent"
 	"github.com/domuk-k/open-managed-agents/internal/llm"
+	"github.com/domuk-k/open-managed-agents/internal/mcp"
 	"github.com/domuk-k/open-managed-agents/internal/sandbox"
 	"github.com/domuk-k/open-managed-agents/internal/session"
 	"github.com/domuk-k/open-managed-agents/internal/store"
@@ -82,12 +83,35 @@ func (s *Server) startRunner(sess *session.Session, ag *agent.Agent) error {
 	if s.sandboxProvider != nil {
 		env, err := s.store.GetEnvironment(context.Background(), sess.EnvironmentID)
 		if err == nil {
-			sb, _ = s.sandboxProvider.Create(context.Background(), env.Config)
+			created, createErr := s.sandboxProvider.Create(context.Background(), env.Config)
+			if createErr != nil {
+				fmt.Printf("[OMA] sandbox creation failed: %v (tools requiring sandbox will be unavailable)\n", createErr)
+			} else {
+				sb = created
+			}
 		}
 	}
 
-	// Build tool registry
+	// Build tool registry — with MCP tools and delegate tool if configured
 	registry := tools.NewFullToolset()
+
+	// Register MCP tools if agent has mcp_servers
+	if len(ag.McpServers) > 0 {
+		if err := mcp.RegisterMCPTools(context.Background(), registry, ag.McpServers); err != nil {
+			fmt.Printf("[OMA] MCP tool registration failed: %v\n", err)
+		}
+	}
+
+	// Register delegate tool if agent has callable_agents
+	if len(ag.CallableAgents) > 0 {
+		delegate := tools.NewDelegateTool(
+			ag.ID,
+			ag.CallableAgents,
+			&storeAgentResolver{store: s.store},
+			tools.MakeSubRunnerFactory(provider, sb, &eventBusAdapter{bus: s.eventBus}),
+		)
+		registry.Register(delegate)
+	}
 
 	// Determine model and system prompt
 	model := ag.Model.ID
@@ -96,11 +120,54 @@ func (s *Server) startRunner(sess *session.Session, ag *agent.Agent) error {
 		systemPrompt = *ag.System
 	}
 
-	// Create and start the runner in interactive mode (waits for user messages)
+	// Create runner with all features wired
 	runner := session.NewAgentRunner(provider, registry, sb, s.eventBus, model, systemPrompt).
 		WithInteractive()
 
+	// Wire permission policy from agent tools config
+	for _, tc := range ag.Tools {
+		if tc.DefaultConfig != nil && tc.DefaultConfig.PermissionPolicy != nil {
+			runner.WithPermissionPolicy(tc.DefaultConfig.PermissionPolicy)
+			break
+		}
+	}
+
+	// Wire outcomes evaluation
+	if len(ag.Outcomes) > 0 {
+		evaluator := session.NewEvaluator(provider, model)
+		runner.WithOutcomes(ag.Outcomes, evaluator)
+	}
+
+	// Wire checkpointing
+	runner.WithCheckpoint(func(ctx context.Context, sessionID string, messages []llm.Message) error {
+		data, err := json.Marshal(messages)
+		if err != nil {
+			return err
+		}
+		return s.store.SaveMessages(ctx, sessionID, data)
+	})
+
 	return s.engine.StartSession(context.Background(), sess.ID, runner, []llm.Message{})
+}
+
+// storeAgentResolver adapts the Store interface for the DelegateTool's AgentResolver.
+type storeAgentResolver struct {
+	store store.Store
+}
+
+func (r *storeAgentResolver) GetAgent(ctx context.Context, id string) (*agent.Agent, error) {
+	return r.store.GetAgent(ctx, id)
+}
+
+// eventBusAdapter wraps EventBus to satisfy the interface{Emit(string, interface{})} constraint.
+type eventBusAdapter struct {
+	bus *session.EventBus
+}
+
+func (a *eventBusAdapter) Emit(sessionID string, content interface{}) {
+	if evt, ok := content.(session.Event); ok {
+		a.bus.Emit(sessionID, evt)
+	}
 }
 
 func (s *Server) listSessions(c echo.Context) error {
@@ -209,12 +276,68 @@ func (s *Server) resumeSession(c echo.Context) error {
 		return c.JSON(http.StatusConflict, apiError("invalid_state", fmt.Sprintf("session is %s, not paused", sess.Status)))
 	}
 
+	// Load the agent to rebuild the runner
+	ag, err := s.store.GetAgent(ctx, sess.Agent)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, apiError("internal_error", "agent not found for resume"))
+	}
+
+	// Restart the runner with saved messages
+	if err := s.startRunnerWithResume(sess, ag); err != nil {
+		return c.JSON(http.StatusInternalServerError, apiError("internal_error", err.Error()))
+	}
+
 	if err := s.store.UpdateSessionStatus(ctx, sessionID, session.StatusRunning); err != nil {
 		return c.JSON(http.StatusInternalServerError, apiError("internal_error", err.Error()))
 	}
 
 	sess.Status = session.StatusRunning
 	return c.JSON(http.StatusOK, sess)
+}
+
+func (s *Server) startRunnerWithResume(sess *session.Session, ag *agent.Agent) error {
+	// Load saved messages
+	savedData, err := s.store.GetMessages(context.Background(), sess.ID)
+	if err != nil {
+		// No saved messages, start fresh
+		return s.startRunner(sess, ag)
+	}
+
+	var messages []llm.Message
+	if err := json.Unmarshal(savedData, &messages); err != nil {
+		return s.startRunner(sess, ag)
+	}
+
+	// Create the same runner setup as startRunner but with initial messages
+	var provider llm.Provider
+	if s.config.LLM.IsAnthropic() {
+		provider = llm.NewAnthropicProvider(s.config.LLM.BaseURL, s.config.LLM.APIKey)
+	} else {
+		provider = llm.NewOpenAIProvider(s.config.LLM.BaseURL, s.config.LLM.APIKey)
+	}
+
+	var sb sandbox.Sandbox
+	if s.sandboxProvider != nil {
+		env, err := s.store.GetEnvironment(context.Background(), sess.EnvironmentID)
+		if err == nil {
+			if created, createErr := s.sandboxProvider.Create(context.Background(), env.Config); createErr == nil {
+				sb = created
+			}
+		}
+	}
+
+	registry := tools.NewFullToolset()
+
+	model := ag.Model.ID
+	systemPrompt := ""
+	if ag.System != nil {
+		systemPrompt = *ag.System
+	}
+
+	runner := session.NewAgentRunner(provider, registry, sb, s.eventBus, model, systemPrompt).
+		WithInteractive()
+
+	return s.engine.StartSession(context.Background(), sess.ID, runner, messages)
 }
 
 func (s *Server) streamSession(c echo.Context) error {
